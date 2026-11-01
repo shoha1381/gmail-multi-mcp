@@ -40,7 +40,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepare": "tsc"
   },
   "dependencies": {
     "@googleapis/gmail": "^18.0.0",
