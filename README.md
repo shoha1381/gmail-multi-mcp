@@ -277,6 +277,29 @@ If the Cloud client is not set up, `gmail_setup_status` returns the console link
 | `gmail_modify_labels` | send | **yes** |
 | `gmail_trash` | send | **yes** |
 
+### Attaching local files to a draft
+
+`gmail_create_draft` takes an optional `attachments` array (up to 10) of `{ path, filename? }`. The message becomes `multipart/mixed`; the text body is unchanged. Drafts are still never sent by this tool.
+
+```json
+{ "account": "me@example.com", "to": ["a@example.com"], "subject": "Quote", "body": "Attached.",
+  "attachments": [{ "path": "/Users/me/Inbox/quote.pdf" }] }
+```
+
+Rules (a refusal names the offending path):
+
+- The path must be **absolute**, with no `..` and no hidden (dot) file or folder.
+- The file must be a regular file **inside `GMAIL_MCP_ATTACHMENT_ROOTS`** (default `~/Inbox`) after symlinks are resolved. This is deliberate: mail content is untrusted, and without a root a prompt-injected request could attach `~/.ssh` or token files to a draft.
+- Combined size ≤ `GMAIL_MCP_MAX_ATTACHMENT_BYTES` (default 25 MB). Larger files: share a Drive link instead.
+- Content-Type comes from the extension (unknown → `application/octet-stream`). Non-ASCII file names are supported.
+- Both OAuth and app-password (IMAP) accounts can create the draft. On an IMAP account `gmail_send_draft` refuses a draft that has attachments rather than silently dropping them.
+
+**Trying it by hand** (nothing is sent):
+
+1. `npm run build && npm test` — `test/attachments.test.ts` covers the path rules and the generated MIME.
+2. Put a file in `~/Inbox`, set `GMAIL_MCP_DRY_RUN=1`, and call `gmail_create_draft` with `attachments`; the result lists each file with its size and type but creates nothing.
+3. Unset dry run, call it again against a `draft`-tier account, and open the draft in Gmail: the file should be attached and open correctly.
+
 **Deliberately absent:** permanent deletion, and anything under `gmail.settings` — auto-forwarding rules and filters are a standing exfiltration channel that survives long after a session ends, so this server never requests a scope that can create one. Trash is recoverable for 30 days; permanent deletion is not, so it stays a human action.
 
 ---
