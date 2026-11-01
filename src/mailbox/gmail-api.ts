@@ -4,6 +4,7 @@ import { buildRawMessage, toGmailRaw, type OutgoingMessage } from "../gmail/mime
 import { parseMessage, type ParsedMessage } from "../gmail/parse.js";
 import type {
   Backend,
+  CreatedDraft,
   DraftSummary,
   Label,
   Mailbox,
@@ -83,7 +84,7 @@ export class GmailApiMailbox implements Mailbox {
     };
   }
 
-  async createDraft(message: OutgoingMessage, thread?: ThreadRef): Promise<string> {
+  async createDraft(message: OutgoingMessage, thread?: ThreadRef): Promise<CreatedDraft> {
     if (message.attachments?.length) {
       // A JSON `raw` body is capped well below Gmail's 25 MB message size, so
       // drafts with attachments go through the media upload endpoint (35 MB).
@@ -92,7 +93,7 @@ export class GmailApiMailbox implements Mailbox {
         requestBody: thread?.threadId ? { message: { threadId: thread.threadId } } : {},
         media: { mimeType: "message/rfc822", body: buildRawMessage(message) },
       });
-      return res.data.id ?? "";
+      return { draftId: res.data.id ?? "", messageId: res.data.message?.id ?? "" };
     }
     const res = await this.gmail.users.drafts.create({
       userId: "me",
@@ -103,7 +104,7 @@ export class GmailApiMailbox implements Mailbox {
         },
       },
     });
-    return res.data.id ?? "";
+    return { draftId: res.data.id ?? "", messageId: res.data.message?.id ?? "" };
   }
 
   async getDraft(draftId: string): Promise<ParsedMessage> {
@@ -166,7 +167,14 @@ export class GmailApiMailbox implements Mailbox {
     return out;
   }
 
-  async deleteDraft(draftId: string): Promise<void> {
+  async deleteDraft(draftId: string, expectedMessageId: string): Promise<void> {
+    // The REST API has no conditional delete, so re-check right before the
+    // call. The window left is one round trip; an edit inside it is the only
+    // way to delete content other than what was previewed.
+    const current = await this.gmail.users.drafts.get({ userId: "me", id: draftId, format: "minimal" });
+    if (!expectedMessageId || current.data.message?.id !== expectedMessageId) {
+      throw new UserFacingError(`Draft ${draftId} changed since it was checked; not deleted.`);
+    }
     await this.gmail.users.drafts.delete({ userId: "me", id: draftId });
   }
 
